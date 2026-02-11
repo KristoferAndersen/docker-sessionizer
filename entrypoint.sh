@@ -2,7 +2,7 @@
 set -e
 
 cd "$HOME/dotfiles"
-stow -t ~ nvim zsh
+stow -t ~ nvim
 cd "$HOME"
 
 # Set up Go path

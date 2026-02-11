@@ -36,21 +36,16 @@ RUN tar xfz nvim-linux-x86_64.tar.gz -C /usr/local
 ENV PATH="/usr/local/nvim-linux-x86_64/bin:${PATH}"
 
 # Create dev user with zsh as default shell
-RUN useradd -m -s /bin/zsh dev
+RUN useradd -m -s /bin/bash dev
 
 # Install oh-my-zsh and powerlevel10k as dev user
 USER dev
 WORKDIR /home/dev
-RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
-    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
+# RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
+#     git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
 
 # Switch back to root for remaining setup
 USER root
-
-# Pre-create cache directories with correct ownership
-# When empty volumes are mounted here, Docker will copy these permissions
-RUN mkdir -p /home/dev/.cache /home/dev/.claude && \
-    chown -R dev:dev /home/dev/.cache /home/dev/.claude
 
 # Entrypoint handles dotfiles setup
 COPY entrypoint.sh /entrypoint.sh
@@ -59,4 +54,4 @@ RUN chmod +x /entrypoint.sh
 WORKDIR /home/dev
 USER dev
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/bin/zsh"]
+CMD ["/bin/bash"]
