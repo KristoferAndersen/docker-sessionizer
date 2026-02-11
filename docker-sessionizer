@@ -1,51 +1,58 @@
 #!/bin/bash
 set -e
 
-IMAGE_NAME="dev-session"
-CONTAINER_PREFIX="dev"
-DOTFILES_PATH="$HOME/dev/dots"
+dotfiles_path="$HOME/dev/dots"
+
+image_name="dev-session"
+container_prefix="dev"
+search_dirs=("$HOME/dev" "$HOME/git" "$HOME/personal")
 
 # Usage
-if [[ $# -lt 1 ]]; then
-    echo "Usage: docker-sessionizer <project-path>"
-    exit 1
+if [[ $# -eq 1 ]]; then
+    selected=$1
+else
+    selected=$(find "${search_dirs[@]}" -mindepth 1 -maxdepth 1 -type d | fzf)
 fi
 
-PROJECT_PATH=$(realpath "$1")
-PROJECT_NAME=$(basename "$PROJECT_PATH" | tr . _)
-CONTAINER_NAME="${CONTAINER_PREFIX}-${PROJECT_NAME}"
-SESSION_NAME="${CONTAINER_NAME}"
+if [[ -z $selected ]]; then
+    exit 0
+fi
+
+project_path=$(realpath "$selected")
+project_name=$(basename "$project_path" | tr . _)
+container_name="${container_prefix}-${project_name}"
+session_name="${container_name}"
 
 # Build image if it doesn't exist
-if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+if ! docker image inspect "$image_name" &>/dev/null; then
     echo "Building dev image..."
-    docker build -t "$IMAGE_NAME" "$(dirname "$(realpath "$0")")"
+    docker build -t "$image_name" "$(dirname "$(realpath "$0")")"
 fi
 
 # Start container if not running
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    docker rm "$CONTAINER_NAME" &>/dev/null || true
+if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+    docker rm "$container_name" &>/dev/null || true
 
     docker run -d \
-        --name "$CONTAINER_NAME" \
-        -v "$PROJECT_PATH:/workspace" \
-        -v "$DOTFILES_PATH:/home/dev/dotfiles" \
-        -v "${CONTAINER_NAME}-cache:/home/dev/.cache" \
-        "$IMAGE_NAME" \
+        --name "$container_name" \
+        -v "$project_path:/workspace" \
+        -v "$dotfiles_path:/home/dev/dotfiles" \
+        -v "${container_name}-cache:/home/dev/.cache" \
+        "$image_name" \
         sleep infinity
 fi
 
 # Create or switch to tmux session with docker exec as default command
-if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    tmux new-session -d -s "$SESSION_NAME" \
-        "docker exec -it -w /workspace $CONTAINER_NAME /bin/bash"
-    tmux set-option -t "$SESSION_NAME" default-command \
-        "docker exec -it -w /workspace $CONTAINER_NAME /bin/bash"
+if ! tmux has-session -t "$session_name"; then
+    tmux new-session -d -s "$session_name" \
+        "docker exec -it -w /workspace $container_name /bin/bash"
+    tmux set-option -t "$session_name" default-command \
+        "docker exec -it -w /workspace $container_name /bin/bash"
 fi
 
 # Attach or switch
 if [[ -z "$TMUX" ]]; then
-    tmux attach-session -t "$SESSION_NAME"
+    tmux attach-session -t "$session_name"
 else
-    tmux switch-client -t "$SESSION_NAME"
+    tmux switch-client -t "$session_name"
 fi
