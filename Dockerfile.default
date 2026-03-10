@@ -2,6 +2,8 @@ FROM dev-base:latest
 
 USER root
 RUN /usr/local/lib/dev-scripts/install-neovim.sh
-RUN /usr/local/lib/dev-scripts/install-claude.sh
 RUN /usr/local/lib/dev-scripts/install-go.sh
+
 USER dev
+RUN /usr/local/lib/dev-scripts/install-claude.sh
+ENV PATH="/home/dev/.local/bin:${PATH}"

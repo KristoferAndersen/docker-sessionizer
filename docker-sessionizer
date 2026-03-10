@@ -37,6 +37,9 @@ else
     docker build -t "$image_name" -f "$sessionizer_dir/Dockerfile.default" "$sessionizer_dir"
 fi
 
+mkdir -p "$HOME/.claude-container"
+[[ -f "$HOME/.claude-container.json" ]] || echo '{}' > "$HOME/.claude-container.json"
+
 # Start container if not running
 if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
     docker rm "$container_name" &>/dev/null || true
@@ -46,6 +49,8 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         -v "$project_path:/workspace" \
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
+        -v "$HOME/.claude-container:/home/dev/.claude" \
+        -v "$HOME/.claude-container.json:/home/dev/.claude.json" \
         "$image_name"
 fi
 
