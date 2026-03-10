@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-dotfiles_path="$HOME/dev/dots"
+dotfiles_path="$HOME/personal/dots"
 
 image_name="dev-session"
 container_prefix="dev"
