@@ -1,0 +1,14 @@
+# Example: consuming repo Dockerfile
+# Build the base image locally first:
+#   docker build -t dev-base /path/to/docker-sessionizer
+#
+# Run available install scripts from /usr/local/lib/dev-scripts/:
+#   install-go.sh     - Go (env: GO_VERSION, default 1.23.5)
+#   install-neovim.sh - Neovim (env: NVIM_VERSION, default 0.11.6)
+#   install-claude.sh - Claude Code CLI
+
+FROM dev-base:latest
+
+# Install only what this repo needs
+RUN GO_VERSION=1.23.5 /usr/local/lib/dev-scripts/install-go.sh
+RUN /usr/local/lib/dev-scripts/install-claude.sh

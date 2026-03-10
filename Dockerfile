@@ -1,6 +1,4 @@
-FROM debian:bookworm-slim
-
-ARG GO_VERSION=1.23.5
+FROM debian:bookworm
 
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,34 +16,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     unzip \
     curl \
-    wget \
     ripgrep \
     fd-find \
     fzf \
-    bash-completion \
-    ca-certificates \
+    jq \
+    htop \
+    locales \
+    xxd \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go from official tarball
-RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xz
-ENV PATH="/usr/local/go/bin:${PATH}"
+# Copy modular install scripts
+COPY scripts/ /usr/local/lib/dev-scripts/
+RUN chmod +x /usr/local/lib/dev-scripts/*.sh
 
-# Install Neovim
-RUN wget https://github.com/neovim/neovim/releases/download/v0.11.6/nvim-linux-x86_64.tar.gz
-RUN tar xfz nvim-linux-x86_64.tar.gz -C /usr/local
-ENV PATH="/usr/local/nvim-linux-x86_64/bin:${PATH}"
 
-# Create dev user with zsh as default shell
-RUN useradd -m -s /bin/bash dev
-
-# Install oh-my-zsh and powerlevel10k as dev user
-USER dev
-WORKDIR /home/dev
-# RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
-#     git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
-
-# Switch back to root for remaining setup
-USER root
+# Create dev user
+RUN useradd -m -s /bin/bash dev && mkdir -p /home/dev/.cache && chown dev:dev /home/dev/.cache
 
 # Entrypoint handles dotfiles setup
 COPY entrypoint.sh /entrypoint.sh

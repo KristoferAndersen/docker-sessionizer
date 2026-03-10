@@ -1,12 +1,12 @@
 #!/bin/zsh
 set -e
 
-cd "$HOME/dotfiles"
-stow -t ~ nvim
-cd "$HOME"
+dotfiles="$HOME/dotfiles"
 
-# Set up Go path
-export GOPATH="$HOME/go"
-export PATH="$GOPATH/bin:$PATH"
+if [[ -d "$dotfiles" ]]; then
+    cd "$dotfiles"
+    stow -t "$HOME" nvim
+    cd "$HOME"
+fi
 
-exec "$@"
+exec sleep infinity
