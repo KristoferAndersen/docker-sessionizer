@@ -13,4 +13,5 @@ esac
 curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-${NVIM_ARCH}.tar.gz" \
     | tar -xz -C /usr/local
 
-echo "export PATH=\"/usr/local/nvim-linux-${NVIM_ARCH}/bin:\$PATH\"" >> /etc/profile.d/neovim.sh
+# Stable, arch-independent path so PATH can be set statically: /usr/local/nvim/bin
+ln -sfn "/usr/local/nvim-linux-${NVIM_ARCH}" /usr/local/nvim

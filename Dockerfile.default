@@ -5,5 +5,13 @@ RUN /usr/local/lib/dev-scripts/install-neovim.sh
 RUN /usr/local/lib/dev-scripts/install-go.sh
 
 USER dev
-RUN /usr/local/lib/dev-scripts/install-claude.sh
-ENV PATH="/home/dev/.local/bin:${PATH}"
+# All tool locations on PATH in one place — every shell and non-interactive
+# process inherits this, no profile sourcing needed.
+ENV GOPATH="/home/dev/go"
+ENV PATH="/home/dev/.local/bin:/usr/local/go/bin:/home/dev/go/bin:/usr/local/nvim/bin:${PATH}"
+
+# Install claude, then verify it actually landed — the installer can exit 0
+# without producing a working binary, so fail the build loudly if so.
+RUN /usr/local/lib/dev-scripts/install-claude.sh \
+    && command -v claude >/dev/null 2>&1 \
+    && claude --version

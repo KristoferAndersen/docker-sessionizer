@@ -11,7 +11,4 @@ case "$ARCH" in
 esac
 
 curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" | tar -C /usr/local -xz
-
-echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/profile.d/go.sh
-echo 'export GOPATH="$HOME/go"' >> /etc/profile.d/go.sh
-echo 'export PATH="$GOPATH/bin:$PATH"' >> /etc/profile.d/go.sh
+# Installs to the stable path /usr/local/go; put /usr/local/go/bin on PATH via ENV.
