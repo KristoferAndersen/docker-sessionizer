@@ -5,7 +5,7 @@ dotfiles="$HOME/dotfiles"
 
 if [[ -d "$dotfiles" ]]; then
     cd "$dotfiles"
-    stow -t "$HOME" nvim
+    stow --no-folding --restow -t "$HOME" nvim
     cd "$HOME"
 fi
 
