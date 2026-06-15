@@ -119,8 +119,24 @@ else
     fi
 fi
 
-mkdir -p "$HOME/.claude-container"
-[[ -f "$HOME/.claude-container.json" ]] || echo '{}' > "$HOME/.claude-container.json"
+# Per-repo Claude state: each project gets its own credential + session history,
+# siloed under ~/.claude-sessions/<project>. Auth once per repo on first launch.
+claude_state="$HOME/.claude-sessions/$project_name"
+mkdir -p "$claude_state/.claude"
+[[ -f "$claude_state/.claude.json" ]] || echo '{}' > "$claude_state/.claude.json"
+
+# Build mounts: the selected project (read-write) plus any read-only reference
+# repos declared in .sessionizer-mounts (one relative path per line, # for comments).
+mount_args=(-v "$project_path:/workspace/$project_name")
+
+manifest="$project_path/.sessionizer-mounts"
+if [[ -f "$manifest" ]]; then
+    while IFS= read -r ref; do
+        [[ -z "$ref" || "$ref" == \#* ]] && continue
+        ref_path=$(realpath "$project_path/$ref" 2>/dev/null) || continue
+        mount_args+=(-v "$ref_path:/workspace/${ref_path:t}:ro")
+    done < "$manifest"
+fi
 
 # Start container if not running
 if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
@@ -128,20 +144,20 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
 
     docker run -d \
         --name "$container_name" \
-        -v "$project_path:/workspace" \
+        "${mount_args[@]}" \
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
-        -v "$HOME/.claude-container:/home/dev/.claude" \
-        -v "$HOME/.claude-container.json:/home/dev/.claude.json" \
+        -v "$claude_state/.claude:/home/dev/.claude" \
+        -v "$claude_state/.claude.json:/home/dev/.claude.json" \
         "$image_name"
 fi
 
 # Create or switch to tmux session with docker exec as default command
 if ! tmux has-session -t "$session_name"; then
     tmux new-session -d -s "$session_name" \
-        "docker exec -it -w /workspace $container_name /bin/zsh -l"
+        "docker exec -it -w /workspace/$project_name $container_name /bin/zsh -l"
     tmux set-option -t "$session_name" default-command \
-        "docker exec -it -w /workspace $container_name /bin/zsh -l"
+        "docker exec -it -w /workspace/$project_name $container_name /bin/zsh -l"
 fi
 
 # Attach or switch
