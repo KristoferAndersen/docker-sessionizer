@@ -28,7 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy modular install scripts
 COPY scripts/ /usr/local/lib/dev-scripts/
-RUN chmod +x /usr/local/lib/dev-scripts/*.sh
+RUN chmod +x /usr/local/lib/dev-scripts/*.sh \
+    && ln -sf /usr/local/lib/dev-scripts/ralph.sh /usr/local/bin/ralph
 
 
 # Create dev user

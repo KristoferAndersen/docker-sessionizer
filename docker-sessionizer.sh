@@ -119,11 +119,13 @@ else
     fi
 fi
 
-# Per-repo Claude state: each project gets its own credential + session history,
-# siloed under ~/.claude-sessions/<project>. Auth once per repo on first launch.
-claude_state="$HOME/.claude-sessions/$project_name"
+# Shared Claude state: one credential + history store for all repos, under
+# ~/.claude-sessions/_shared. Authenticate once, everywhere. Credentials live in
+# .claude/.credentials.json inside this dir. ~/.claude.json is NOT mounted —
+# Claude rewrites it via atomic rename, which breaks a single-file bind mount;
+# the entrypoint seeds a stub instead (see entrypoint.sh).
+claude_state="$HOME/.claude-sessions/_shared"
 mkdir -p "$claude_state/.claude"
-[[ -f "$claude_state/.claude.json" ]] || echo '{}' > "$claude_state/.claude.json"
 
 # Build mounts: the selected project (read-write) plus any read-only reference
 # repos declared in .sessionizer-mounts (one relative path per line, # for comments).
@@ -148,7 +150,6 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
         -v "$claude_state/.claude:/home/dev/.claude" \
-        -v "$claude_state/.claude.json:/home/dev/.claude.json" \
         "$image_name"
 fi
 
