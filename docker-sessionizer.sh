@@ -119,11 +119,14 @@ else
     fi
 fi
 
-# Shared Claude state: one credential + history store for all repos, under
-# ~/.claude-sessions/_shared. Authenticate once, everywhere. Credentials live in
-# .claude/.credentials.json inside this dir. ~/.claude.json is NOT mounted —
-# Claude rewrites it via atomic rename, which breaks a single-file bind mount;
-# the entrypoint seeds a stub instead (see entrypoint.sh).
+# Shared Claude state: one credential + config + history store for all repos,
+# under ~/.claude-sessions/_shared, bind-mounted to /home/dev/.claude. Authenticate
+# once, everywhere. CLAUDE_CONFIG_DIR (set on `docker run` below) relocates BOTH
+# .credentials.json AND .claude.json — the latter holds the OAuth session/account
+# state (oauthAccount, userID, machineID) that gates "logged in" — into this one
+# mounted directory. Mounting the directory (not the single .claude.json file)
+# sidesteps the atomic-rename problem that breaks a single-file bind mount, so
+# login now survives container rebuilds instead of resetting every reboot.
 claude_state="$HOME/.claude-sessions/_shared"
 mkdir -p "$claude_state/.claude"
 
@@ -150,6 +153,7 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
         -v "$claude_state/.claude:/home/dev/.claude" \
+        -e CLAUDE_CONFIG_DIR=/home/dev/.claude \
         "$image_name"
 fi
 
