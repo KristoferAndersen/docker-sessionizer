@@ -86,7 +86,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$selected" ]]; then
-    selected=$(find "${search_dirs[@]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | fzf)
+    # Strip $HOME/ for a tidier picker, restore it after selection.
+    selected=$(find "${search_dirs[@]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+        | sed "s|^$HOME/||" | fzf)
+    [[ -n "$selected" && "$selected" != /* ]] && selected="$HOME/$selected"
 fi
 
 if [[ -z $selected ]]; then
@@ -149,13 +152,15 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
         -v "${container_name}-local-cache:/home/dev/.local" \
+        -v "${container_name}-go-cache:/home/dev/go" \
         -v "$claude_state/.claude:/home/dev/.claude" \
         -e CLAUDE_CONFIG_DIR=/home/dev/.claude \
         "$image_name"
 fi
 
 # Create or switch to tmux session with docker exec as default command
-if ! tmux has-session -t "$session_name"; then
+# "=" forces an exact match — without it, dev-foo would match dev-foo-bar.
+if ! tmux has-session -t "=$session_name" 2>/dev/null; then
     tmux new-session -d -s "$session_name" \
         "docker exec -it -w /workspace/$project_name $container_name /bin/zsh -l"
     tmux set-option -t "$session_name" default-command \
