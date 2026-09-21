@@ -62,7 +62,9 @@ RUN chmod +x /usr/local/lib/dev-scripts/*.sh \
 
 
 # Create dev user
-RUN useradd -m -s /bin/zsh dev && mkdir -p /home/dev/.cache && chown dev:dev /home/dev/.cache
+RUN useradd -m -s /bin/zsh dev \
+    && mkdir -p /home/dev/.cache /home/dev/.local \
+    && chown dev:dev /home/dev/.cache /home/dev/.local
 
 # Entrypoint handles dotfiles setup
 COPY entrypoint.sh /entrypoint.sh

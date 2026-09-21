@@ -100,23 +100,15 @@ session_name="${container_name}"
 
 sessionizer_dir="$(dirname "$(realpath "$0")")"
 
-# Determine image: project-specific if Dockerfile exists, otherwise default
-if [[ -f "$project_path/Dockerfile" ]]; then
-    image_name="dev-session-${project_name}"
-    if $rebuild || ! image_exists "$image_name"; then
-        echo "Building project image from $project_path/Dockerfile..."
-        docker build -t "$image_name" "$project_path"
-    fi
-else
-    image_name="dev-default"
-    if $rebuild || ! image_exists "$base_image_name"; then
-        echo "Building base dev image..."
-        docker build -t "$base_image_name" "$sessionizer_dir"
-    fi
-    if $rebuild || ! image_exists "$image_name"; then
-        echo "Building default dev image..."
-        docker build -t "$image_name" -f "$sessionizer_dir/Dockerfile.default" "$sessionizer_dir"
-    fi
+# Build the default dev image.
+image_name="dev-default"
+if $rebuild || ! image_exists "$base_image_name"; then
+    echo "Building base dev image..."
+    docker build -t "$base_image_name" "$sessionizer_dir"
+fi
+if $rebuild || ! image_exists "$image_name"; then
+    echo "Building default dev image..."
+    docker build -t "$image_name" -f "$sessionizer_dir/Dockerfile.default" "$sessionizer_dir"
 fi
 
 # Shared Claude state: one credential + config + history store for all repos,
@@ -143,6 +135,10 @@ if [[ -f "$manifest" ]]; then
     done < "$manifest"
 fi
 
+# /home/dev/.local holds nvim's shada/undo history (.local/state) and
+# lazy.nvim/mason plugin installs (.local/share) — not under ~/.cache, so it
+# needs its own persistent volume too.
+
 # Start container if not running
 if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
     docker rm "$container_name" &>/dev/null || true
@@ -152,6 +148,7 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         "${mount_args[@]}" \
         -v "$dotfiles_path:/home/dev/dotfiles" \
         -v "${container_name}-cache:/home/dev/.cache" \
+        -v "${container_name}-local-cache:/home/dev/.local" \
         -v "$claude_state/.claude:/home/dev/.claude" \
         -e CLAUDE_CONFIG_DIR=/home/dev/.claude \
         "$image_name"
