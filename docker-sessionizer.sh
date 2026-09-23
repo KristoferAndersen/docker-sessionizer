@@ -1,15 +1,29 @@
 #!/usr/bin/env zsh
 set -e
 
-dotfiles_path="$HOME/personal/dots"
+dotfiles_path="$HOME/dev/personal/dots"
 
 base_image_name="dev-base"
 container_prefix="dev"
-search_dirs=("$HOME/dev" "$HOME/git" "$HOME/personal")
+# Named group roots (name=path): each holds the repos of one kind that may be
+# containerized, as real directories or as symlinks to repos living elsewhere.
+# Every entry of the selected repo's group is mounted at /workspace/<name>/<entry>,
+# so sibling repos are visible and other groups are not. Override with
+# SESSIONIZER_GROUP_DIRS, colon-separated name=path entries.
+group_specs=(
+    "work=$HOME/dev/work/containerized"
+    "personal=$HOME/dev/personal/containerized"
+)
+[[ -n "${SESSIONIZER_GROUP_DIRS:-}" ]] && group_specs=("${(s.:.)SESSIONIZER_GROUP_DIRS}")
 
 usage() {
-    echo "Usage: $(basename "$0") [--rebuild] [project_path]"
+    echo "Usage: $(basename "$0") [--rebuild] [group/project|project_path]"
     echo "       $(basename "$0") clean [--all]"
+    echo ""
+    echo "  Projects are directories or symlinks one level below a named group root"
+    echo "  (default work=~/dev/work/containerized, personal=~/dev/personal/containerized;"
+    echo "  override with \$SESSIONIZER_GROUP_DIRS as name=path:name=path). Every entry"
+    echo "  of the selected group is mounted at /workspace/<name>/<entry>."
     echo ""
     echo "  --rebuild   Force rebuild of images even if they already exist"
     echo "  clean       Remove stopped ${container_prefix}-* containers and their cache volumes"
@@ -85,19 +99,67 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# Resolve name=path specs into groups whose root exists.
+typeset -A groups   # name -> resolved path
+for spec in "${group_specs[@]}"; do
+    name="${spec%%=*}"; root="${spec#*=}"
+    if [[ -z "$name" || "$name" == "$spec" || "$name" == */* ]]; then
+        echo "Bad group spec (want name=path): $spec" >&2
+        exit 1
+    fi
+    [[ -d "$root" ]] && groups[$name]=$(realpath "$root")
+done
+if (( ${#groups} == 0 )); then
+    echo "No group directories found: ${group_specs[*]}" >&2
+    exit 1
+fi
+
+# Entries of a group: directories and symlinks-to-directories, by entry name.
+group_entries() {
+    find -L "${groups[$1]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
+        | sed "s|^${groups[$1]}/||" | sort
+}
+
 if [[ -z "$selected" ]]; then
-    # Strip $HOME/ for a tidier picker, restore it after selection.
-    selected=$(find "${search_dirs[@]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
-        | sed "s|^$HOME/||" | fzf)
-    [[ -n "$selected" && "$selected" != /* ]] && selected="$HOME/$selected"
+    # Picker shows "<name>/<entry>".
+    selected=$(for name in "${(k)groups[@]}"; do
+        group_entries "$name" | sed "s|^|$name/|"
+    done | sort | fzf)
 fi
 
 if [[ -z $selected ]]; then
     exit 0
 fi
 
-project_path=$(realpath "$selected")
-project_name=$(basename "$project_path" | tr . _)
+# Accept "<name>/<entry>" (from the picker) or a path to a repo that some
+# group entry points at (directly or via symlink).
+group_name=""; project_dir=""
+if [[ "$selected" != /* && "$selected" != .* && "$selected" == */* ]]; then
+    name="${selected%%/*}"; entry="${selected#*/}"
+    if [[ -n "${groups[$name]:-}" && "$entry" != */* && -d "${groups[$name]}/$entry" ]]; then
+        group_name="$name"; project_dir="$entry"
+    fi
+fi
+if [[ -z "$group_name" && -d "$selected" ]]; then
+    want=$(realpath "$selected")
+    for name in "${(k)groups[@]}"; do
+        for entry in ${(f)"$(group_entries "$name")"}; do
+            if [[ "$(realpath "${groups[$name]}/$entry")" == "$want" ]]; then
+                group_name="$name"; project_dir="$entry"; break 2
+            fi
+        done
+    done
+fi
+if [[ -z "$group_name" ]]; then
+    echo "Not an entry of a group root (${(v)groups[*]}): $selected" >&2
+    exit 1
+fi
+
+group_path="${groups[$group_name]}"
+project_path=$(realpath "$group_path/$project_dir")
+# Docker/tmux-safe names; mount paths keep the real directory names.
+project_name="${group_name//./_}-${project_dir//./_}"
+workdir="/workspace/$group_name/$project_dir"
 container_name="${container_prefix}-${project_name}"
 session_name="${container_name}"
 
@@ -125,18 +187,13 @@ fi
 claude_state="$HOME/.claude-sessions/_shared"
 mkdir -p "$claude_state/.claude"
 
-# Build mounts: the selected project (read-write) plus any read-only reference
-# repos declared in .sessionizer-mounts (one relative path per line, # for comments).
-mount_args=(-v "$project_path:/workspace/$project_name")
-
-manifest="$project_path/.sessionizer-mounts"
-if [[ -f "$manifest" ]]; then
-    while IFS= read -r ref; do
-        [[ -z "$ref" || "$ref" == \#* ]] && continue
-        ref_path=$(realpath "$project_path/$ref" 2>/dev/null) || continue
-        mount_args+=(-v "$ref_path:/workspace/${ref_path:t}:ro")
-    done < "$manifest"
-fi
+# Mount every entry of the selected group at /workspace/<group>/<entry>,
+# resolving symlinks on the host side (Docker cannot follow them inside the
+# container). Entries added later need a container restart to appear.
+mount_args=()
+for entry in ${(f)"$(group_entries "$group_name")"}; do
+    mount_args+=(-v "$(realpath "$group_path/$entry"):/workspace/$group_name/$entry")
+done
 
 # /home/dev/.local holds nvim's shada/undo history (.local/state) and
 # lazy.nvim/mason plugin installs (.local/share) — not under ~/.cache, so it
@@ -162,9 +219,9 @@ fi
 # "=" forces an exact match — without it, dev-foo would match dev-foo-bar.
 if ! tmux has-session -t "=$session_name" 2>/dev/null; then
     tmux new-session -d -s "$session_name" \
-        "docker exec -it -w /workspace/$project_name $container_name /bin/zsh -l"
+        "docker exec -it -w $workdir $container_name /bin/zsh -l"
     tmux set-option -t "$session_name" default-command \
-        "docker exec -it -w /workspace/$project_name $container_name /bin/zsh -l"
+        "docker exec -it -w $workdir $container_name /bin/zsh -l"
 fi
 
 # Attach or switch
