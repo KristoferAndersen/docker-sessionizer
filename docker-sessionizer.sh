@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 set -e
 
-dotfiles_path="$HOME/dev/personal/dots"
+dotfiles_path="${DOTFILE_DIR:=$HOME/dev/personal/dots}"
 
 base_image_name="dev-base"
 container_prefix="dev"
@@ -173,7 +173,9 @@ session_name="${container_name}"
 # scripts/) is picked up automatically. --rebuild adds --no-cache for the RUN
 # layers whose network fetches (curl | sh installers) the cache can't see.
 image_name="dev-default"
-build_args=()
+# No provenance attestation: it embeds build timestamps, so even a fully
+# cached build gets a new image ID and would force a container recreate.
+build_args=(--provenance=false)
 $rebuild && build_args+=(--no-cache)
 echo "Building base dev image..."
 docker build "${build_args[@]}" -t "$base_image_name" "$sessionizer_dir"
@@ -230,6 +232,13 @@ fi
 if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
     docker rm "$container_name" &>/dev/null || true
 
+    # Docker would silently create a missing bind source as an empty root-owned
+    # dir, and the entrypoint would then fail on it.
+    if [[ ! -d "$dotfiles_path" ]]; then
+        echo "Dotfiles directory not found: $dotfiles_path" >&2
+        exit 1
+    fi
+
     docker run -d \
         --name "$container_name" \
         "${mount_args[@]}" \
@@ -240,6 +249,20 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         -v "$claude_state/.claude:/home/dev/.claude" \
         -e CLAUDE_CONFIG_DIR=/home/dev/.claude \
         "$image_name"
+
+    # The entrypoint's setup runs under set -e; if it fails the container exits
+    # and the tmux session below would die with it, silently. Give it a moment
+    # and surface its logs instead.
+    for _ in {1..10}; do
+        sleep 0.2
+        [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" == true ]] || break
+    done
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$container_name")" != true ]]; then
+        echo "Container $container_name exited during startup" \
+            "(code $(docker inspect -f '{{.State.ExitCode}}' "$container_name")):" >&2
+        docker logs --tail 50 "$container_name" >&2
+        exit 1
+    fi
 fi
 
 # Create or switch to tmux session with docker exec as default command
