@@ -1,6 +1,4 @@
-# --- builder: compile/fetch tools too old (or absent) in bookworm apt ---
-# Currently: git (bookworm ships 2.39.5). Add more source builds here as needed.
-FROM debian:bookworm AS builder
+FROM debian:trixie AS builder
 ARG GIT_VERSION=2.50.1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -21,7 +19,7 @@ RUN curl -fsSL "https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_V
     && make prefix=/usr/local NO_TCLTK=1 -j"$(nproc)" \
     && make prefix=/usr/local NO_TCLTK=1 install
 
-FROM debian:bookworm
+FROM debian:trixie
 
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -46,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     locales \
     xxd \
     ca-certificates \
-    libcurl3-gnutls \
+    libcurl3t64-gnutls \
     libpcre2-8-0 \
     libexpat1 \
     zlib1g \
