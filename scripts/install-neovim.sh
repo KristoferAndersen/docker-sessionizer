@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NVIM_VERSION="${NVIM_VERSION:-0.11.6}"
+NVIM_VERSION="${NVIM_VERSION:-0.12.5}"
 
 ARCH=$(uname -m)
 case "$ARCH" in
