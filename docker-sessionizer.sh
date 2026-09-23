@@ -25,7 +25,12 @@ usage() {
     echo "  override with \$SESSIONIZER_GROUP_DIRS as name=path:name=path). Every entry"
     echo "  of the selected group is mounted at /workspace/<name>/<entry>."
     echo ""
-    echo "  --rebuild   Force rebuild of images even if they already exist"
+    echo "  --rebuild   Dockerfile changed: rebuild images and recreate the container"
+    echo ""
+    echo "  Mount changes (new group entries) are picked up automatically: the"
+    echo "  container is recreated when its mounts no longer match the group."
+    echo "  Recreation kills the repo's tmux session; if you launched from inside"
+    echo "  that session the script goes with it, so just run it again."
     echo "  clean       Remove stopped ${container_prefix}-* containers and their cache volumes"
     echo "  clean --all Also stop running containers and remove dev images"
 }
@@ -198,6 +203,27 @@ done
 # /home/dev/.local holds nvim's shada/undo history (.local/state) and
 # lazy.nvim/mason plugin installs (.local/share) — not under ~/.cache, so it
 # needs its own persistent volume too.
+
+# A rebuilt image or changed mounts only apply to a fresh container. Compare the
+# existing container's /workspace binds with what we would mount now, and tear
+# it down if they differ (or if --rebuild). Named cache volumes survive; the
+# tmux session is killed so its shells reattach to the new container.
+if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+    reason=""
+    if $rebuild; then
+        reason="image rebuilt"
+    else
+        wanted=$(printf '%s\n' "${mount_args[@]}" | grep -v '^-v$' | sort)
+        current=$(docker inspect -f '{{range .Mounts}}{{.Source}}:{{.Destination}}{{"\n"}}{{end}}' \
+            "$container_name" | grep ':/workspace/' | sort)
+        [[ "$wanted" != "$current" ]] && reason="mounts changed"
+    fi
+    if [[ -n "$reason" ]]; then
+        echo "Recreating container $container_name ($reason)..."
+        docker rm -f "$container_name" >/dev/null
+        tmux kill-session -t "=$session_name" 2>/dev/null || true
+    fi
+fi
 
 # Start container if not running
 if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
