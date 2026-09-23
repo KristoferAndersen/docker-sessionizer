@@ -5,6 +5,7 @@ dotfiles_path="$HOME/dev/personal/dots"
 
 base_image_name="dev-base"
 container_prefix="dev"
+sessionizer_dir="$(dirname "$(realpath "$0")")"
 # Named group roots (name=path): each holds the repos of one kind that may be
 # containerized, as real directories or as symlinks to repos living elsewhere.
 # Every entry of the selected repo's group is mounted at /workspace/<name>/<entry>,
@@ -25,18 +26,17 @@ usage() {
     echo "  override with \$SESSIONIZER_GROUP_DIRS as name=path:name=path). Every entry"
     echo "  of the selected group is mounted at /workspace/<name>/<entry>."
     echo ""
-    echo "  --rebuild   Dockerfile changed: rebuild images and recreate the container"
+    echo "  --rebuild   Build with --no-cache (re-runs installer layers whose"
+    echo "              network fetches Docker's cache can't see)"
     echo ""
-    echo "  Mount changes (new group entries) are picked up automatically: the"
-    echo "  container is recreated when its mounts no longer match the group."
+    echo "  Changes are picked up automatically: images build on every launch"
+    echo "  (Docker's layer cache makes unchanged builds a fast no-op), and the"
+    echo "  container is recreated when it runs an outdated image or its mounts"
+    echo "  no longer match the group."
     echo "  Recreation kills the repo's tmux session; if you launched from inside"
     echo "  that session the script goes with it, so just run it again."
     echo "  clean       Remove stopped ${container_prefix}-* containers and their cache volumes"
     echo "  clean --all Also stop running containers and remove dev images"
-}
-
-image_exists() {
-    docker image inspect "$1" &>/dev/null
 }
 
 clean() {
@@ -168,18 +168,18 @@ workdir="/workspace/$group_name/$project_dir"
 container_name="${container_prefix}-${project_name}"
 session_name="${container_name}"
 
-sessionizer_dir="$(dirname "$(realpath "$0")")"
-
-# Build the default dev image.
+# Always build: Docker's layer cache hashes the build inputs itself, so an
+# unchanged build is a fast no-op and any change (Dockerfiles, entrypoint.sh,
+# scripts/) is picked up automatically. --rebuild adds --no-cache for the RUN
+# layers whose network fetches (curl | sh installers) the cache can't see.
 image_name="dev-default"
-if $rebuild || ! image_exists "$base_image_name"; then
-    echo "Building base dev image..."
-    docker build -t "$base_image_name" "$sessionizer_dir"
-fi
-if $rebuild || ! image_exists "$image_name"; then
-    echo "Building default dev image..."
-    docker build -t "$image_name" -f "$sessionizer_dir/Dockerfile.default" "$sessionizer_dir"
-fi
+build_args=()
+$rebuild && build_args+=(--no-cache)
+echo "Building base dev image..."
+docker build "${build_args[@]}" -t "$base_image_name" "$sessionizer_dir"
+echo "Building default dev image..."
+docker build "${build_args[@]}" -t "$image_name" \
+    -f "$sessionizer_dir/Dockerfile.default" "$sessionizer_dir"
 
 # Shared Claude state: one credential + config + history store for all repos,
 # under ~/.claude-sessions/_shared, bind-mounted to /home/dev/.claude. Authenticate
@@ -204,14 +204,15 @@ done
 # lazy.nvim/mason plugin installs (.local/share) — not under ~/.cache, so it
 # needs its own persistent volume too.
 
-# A rebuilt image or changed mounts only apply to a fresh container. Compare the
-# existing container's /workspace binds with what we would mount now, and tear
-# it down if they differ (or if --rebuild). Named cache volumes survive; the
-# tmux session is killed so its shells reattach to the new container.
+# A rebuilt image or changed mounts only apply to a fresh container. Recreate
+# the container when it runs an image other than the current one, or when its
+# /workspace binds no longer match what we would mount now. Named cache volumes
+# survive; the tmux session is killed so its shells reattach to the new container.
 if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
     reason=""
-    if $rebuild; then
-        reason="image rebuilt"
+    if [[ "$(docker inspect -f '{{.Image}}' "$container_name")" \
+            != "$(docker image inspect -f '{{.Id}}' "$image_name")" ]]; then
+        reason="image updated"
     else
         wanted=$(printf '%s\n' "${mount_args[@]}" | grep -v '^-v$' | sort)
         current=$(docker inspect -f '{{range .Mounts}}{{.Source}}:{{.Destination}}{{"\n"}}{{end}}' \
