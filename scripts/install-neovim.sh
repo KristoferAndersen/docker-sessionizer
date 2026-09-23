@@ -15,3 +15,6 @@ curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/
 
 # Stable, arch-independent path so PATH can be set statically: /usr/local/nvim/bin
 ln -sfn "/usr/local/nvim-linux-${NVIM_ARCH}" /usr/local/nvim
+
+# vim -> nvim 
+ln -sf /usr/local/nvim/bin/nvim /usr/local/bin/vim
